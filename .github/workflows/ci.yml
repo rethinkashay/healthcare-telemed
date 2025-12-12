@@ -26,7 +26,7 @@ jobs:
     - name: Run Build (Check for compilation errors)
       # We add --no-lint to skip the strict linting check during build
       # We add the missing environment variables so the code doesn't crash on import
-      run: npx next build --no-lint
+      run: npm run build
       env:
         NEXT_PUBLIC_SUPABASE_URL: "https://placeholder.supabase.co"
         NEXT_PUBLIC_SUPABASE_ANON_KEY: "placeholder-anon-key"
