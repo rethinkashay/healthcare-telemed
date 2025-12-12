@@ -1,11 +1,10 @@
 "use client";
-
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Search, MapPin, Star, Clock, Video, Calendar, User } from "lucide-react";
-
+import { formatLocalTime } from "@/utils/date";
 export default function PatientDashboard() {
   const supabase = createClient();
   const router = useRouter();
@@ -67,6 +66,33 @@ export default function PatientDashboard() {
     fetchData();
   }, [router, supabase]);
 
+  // --- REALTIME SUBSCRIPTION ---
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase
+      .channel('patient-appointments')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE', // Patients mainly care if status changes
+          schema: 'public',
+          table: 'appointments',
+          filter: `patient_id=eq.${user.id}`,
+        },
+        (payload) => {
+          console.log("Appointment Updated:", payload);
+          // Update the list immediately
+          setAppointments((prev) =>
+            prev.map((a) => a.id === payload.new.id ? { ...a, status: payload.new.status } : a)
+          );
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase, user]);
+
   return (
     <div className="min-h-screen bg-gray-50 pb-10">
       <nav className="bg-white shadow-sm p-4 sticky top-0 z-10 mb-8">
@@ -101,7 +127,7 @@ export default function PatientDashboard() {
                       
                       <div className="flex items-center gap-2 text-gray-500 text-sm mt-3">
                         <Clock className="w-4 h-4" />
-                        {new Date(appt.start_time).toLocaleDateString()} at {new Date(appt.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                        {formatLocalTime(appt.start_time)}
                       </div>
                     </div>
                     

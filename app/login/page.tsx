@@ -21,18 +21,37 @@ export default function Login() {
     setError(null);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      // 1. Log in the user
+      const { data: { user }, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (error) throw error;
+      if (authError || !user) throw authError;
 
-      // Redirect successful login to home for now (Dashboard comes later)
-      router.push("/");
+      // 2. Fetch the user's role from the profiles table
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError) {
+        console.error("Error fetching profile:", profileError);
+        // Fallback if profile fetch fails
+        router.push("/"); 
+      } else {
+        // 3. Redirect based on Role
+        if (profile.role === 'doctor') {
+          router.push("/doctor/dashboard");
+        } else {
+          router.push("/patient/dashboard");
+        }
+      }
+      
       router.refresh(); 
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || "An error occurred");
     } finally {
       setLoading(false);
     }

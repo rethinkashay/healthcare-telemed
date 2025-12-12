@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { useRouter } from "next/navigation";
-import Link from "next/link"; // <--- Added Link
-import { User, Stethoscope, DollarSign, FileText, Save, Loader2, Calendar, CheckCircle, XCircle, Clock, Video } from "lucide-react"; // <--- Added Video icon
+import Link from "next/link"; 
+import { User, Stethoscope, DollarSign, FileText, Save, Loader2, Calendar, CheckCircle, XCircle, Clock, Video } from "lucide-react"; 
+import { formatLocalTime } from "@/utils/date";
 
 export default function DoctorDashboard() {
   const supabase = createClient();
@@ -87,6 +88,58 @@ export default function DoctorDashboard() {
     fetchData();
   }, [router, supabase]);
 
+  // --- REALTIME SUBSCRIPTION ---
+  useEffect(() => {
+    if (!user) return;
+    // Listen for changes to the 'appointments' table
+    const channel = supabase
+      .channel('doctor-appointments')
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen for INSERT and UPDATE
+          schema: 'public',
+          table: 'appointments',
+          filter: `doctor_id=eq.${user.id}`, // Only my appointments
+        },
+        async (payload) => {
+          console.log("Realtime Update:", payload);
+          if (payload.eventType === 'INSERT') {
+            // New appointment! We need to fetch the patient name to display it nicely.
+            try {
+              const { data: patientData } = await supabase
+                .from('profiles')
+                .select('full_name, email')
+                .eq('id', payload.new.patient_id)
+                .single();
+             
+              const newAppt = {
+                ...payload.new,
+                patient_name: patientData?.full_name || patientData?.email || "New Patient"
+              };
+             
+              setAppointments((prev) => [...prev, newAppt]);
+            } catch (err) {
+              console.error("Failed to fetch patient for realtime appt:", err);
+              // Fallback: Add without patient name
+              setAppointments((prev) => [...prev, { ...payload.new, patient_name: "Unknown Patient" }]);
+            }
+          }
+          else if (payload.eventType === 'UPDATE') {
+            // Status changed (e.g. maybe auto-cancelled?)
+            setAppointments((prev) =>
+              prev.map((a) => a.id === payload.new.id ? { ...a, ...payload.new } : a)
+            );
+          }
+        }
+      )
+      .subscribe();
+    // Cleanup when leaving page
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [supabase, user]);
+
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -135,14 +188,24 @@ export default function DoctorDashboard() {
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-4xl mx-auto space-y-8">
+        
+        {/* UPDATED HEADER WITH AVAILABILITY BUTTON */}
         <div className="flex justify-between items-center">
              <h1 className="text-3xl font-bold text-gray-900">Doctor Dashboard</h1>
-             <button 
-                onClick={async () => { await supabase.auth.signOut(); router.push("/login"); }}
-                className="text-red-500 hover:underline"
-             >
-                Sign Out
-             </button>
+             <div className="flex items-center gap-4">
+               <Link 
+                 href="/doctor/availability"
+                 className="px-4 py-2 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition"
+               >
+                 Manage Availability
+               </Link>
+               <button 
+                  onClick={async () => { await supabase.auth.signOut(); router.push("/login"); }}
+                  className="text-red-500 hover:underline"
+               >
+                  Sign Out
+               </button>
+             </div>
         </div>
 
         {/* SECTION 1: PROFILE SETTINGS */}
@@ -231,7 +294,7 @@ export default function DoctorDashboard() {
                     <div className="flex items-center gap-4 text-sm text-gray-600 mt-1">
                       <div className="flex items-center gap-1">
                         <Clock className="w-4 h-4" />
-                        {new Date(appt.start_time).toLocaleDateString()} at {new Date(appt.start_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                        {formatLocalTime(appt.start_time)}
                       </div>
                       <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wide
                         ${appt.status === 'confirmed' ? 'bg-green-100 text-green-700' : 
@@ -274,6 +337,13 @@ export default function DoctorDashboard() {
                            className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-green-700 transition text-sm"
                          >
                            <Video className="w-4 h-4" /> Join Call
+                         </Link>
+                       )}
+
+                       {/* NEW: Appointment Details Link - Shows for confirmed or pending */}
+                       {(appt.status === 'pending' || appt.status === 'confirmed') && (
+                         <Link href={`/doctor/appointment/${appt.id}`} className="p-2 text-blue-600 hover:bg-blue-50 rounded">
+                           <FileText className="w-5 h-5" />
                          </Link>
                        )}
                      </div>

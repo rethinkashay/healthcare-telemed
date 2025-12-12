@@ -1,0 +1,36 @@
+name: CI Quality Check
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-lint:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install Dependencies
+      # 'npm ci' is faster and safer than 'npm install' for CI servers
+      run: npm ci
+
+    - name: Run Linting (Check for code errors)
+      run: npm run lint
+
+    - name: Run Build (Check for compilation errors)
+      run: npm run build
+      env:
+        # We provide dummy keys because the build step just needs STRINGS,
+        # it doesn't actually connect to the database during build.
+        NEXT_PUBLIC_SUPABASE_URL: "https://placeholder.supabase.co"
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: "placeholder-key"
